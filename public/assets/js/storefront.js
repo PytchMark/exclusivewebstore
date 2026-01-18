@@ -314,6 +314,8 @@ function renderGrid(list){
 
 // ======== PDP LOGIC ========
 let ACTIVE = null, QTY = 1, PROD = null;
+let pdpOpenTimer = null;
+let pdpCloseTimer = null;
 const backdrop = $('#backdrop'), pdp = $('#pdp'), strip = $('#pdpStrip');
 const img = $('#pdpImg'), title = $('#pdptitle'), sub = $('#pdpsub'),
       priceEl = $('#pdpprice'), badgesEl = $('#pdpbadges'), tiersEl = $('#pdptiers');
@@ -327,6 +329,17 @@ backdrop.onclick    = closePDP;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePDP(); });
 
 function openPDP(p,card){
+  clearTimeout(pdpOpenTimer);
+  clearTimeout(pdpCloseTimer);
+  pdpOpenTimer = null;
+  pdpCloseTimer = null;
+  document.querySelectorAll('.ghost').forEach(g => g.remove());
+  backdrop.classList.remove('show');
+  pdp.classList.remove('show');
+  pdp.style.transition = '';
+  pdp.style.transform = '';
+  pdp.style.opacity = 1;
+
   PROD = p;
   ACTIVE = card;
   QTY = 1;
@@ -343,9 +356,6 @@ function openPDP(p,card){
   badgesEl.innerHTML = (p.badges||[]).map(b=>`<span class="badge">${b}</span>`).join('');
   tiersEl.innerHTML  = (p.tiers||[]).map(t=>`<span class="tier">${t.min}+ save ${t.pct}%</span>`).join('');
   strip.style.background = CATEGORY_STRIPS[p.cat] || '#0C2C7A';
-
-  // Clean up any old ghosts first
-  document.querySelectorAll('.ghost').forEach(g => g.remove());
 
   const r = card.getBoundingClientRect();
   const ghost = document.createElement('div');
@@ -371,21 +381,37 @@ function openPDP(p,card){
       pdp.style.transform = 'translate(0,0) scale(1,1)';
       ghost.style.opacity = 0;
       ghost.style.transition = 'opacity .2s ease';
-      setTimeout(()=>{
+      pdpOpenTimer = setTimeout(()=>{
         ghost.remove();
         pdp.style.transition = '';
         pdp.style.transform = '';
+        pdpOpenTimer = null;
       }, 400);
     });
   });
 }
 
 function closePDP(){
-  if(!pdp.classList.contains('show')) return;
+  clearTimeout(pdpOpenTimer);
+  clearTimeout(pdpCloseTimer);
+  pdpOpenTimer = null;
+  pdpCloseTimer = null;
+  document.querySelectorAll('.ghost').forEach(g => g.remove());
+  backdrop.classList.remove('show');
 
+  const wasOpen = pdp.classList.contains('show');
   const origin = ACTIVE || document.querySelector(`[data-sku="${PROD?.sku}"]`);
   const rr = pdp.getBoundingClientRect();
-  backdrop.classList.remove('show');
+
+  if(!wasOpen){
+    pdp.classList.remove('show');
+    pdp.style.transition = '';
+    pdp.style.transform  = '';
+    pdp.style.opacity    = 1;
+    ACTIVE = null;
+    PROD = null;
+    return;
+  }
 
   if(origin){
     const r  = origin.getBoundingClientRect();
@@ -395,7 +421,7 @@ function closePDP(){
     pdp.style.transformOrigin = 'top left';
     pdp.style.transform = `translate(${dx}px,${dy}px) scale(${sx},${sy})`;
     pdp.style.opacity = 0;
-    setTimeout(()=>{
+    pdpCloseTimer = setTimeout(()=>{
       pdp.classList.remove('show');
       pdp.style.transition = '';
       pdp.style.transform  = '';
@@ -403,6 +429,7 @@ function closePDP(){
       ACTIVE = null;
       PROD = null;
       document.querySelectorAll('.ghost').forEach(g => g.remove());
+      pdpCloseTimer = null;
     }, 320);
   }else{
     pdp.classList.remove('show');

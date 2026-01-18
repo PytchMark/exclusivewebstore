@@ -159,7 +159,8 @@
   .ghost{
     position:fixed;inset:auto;overflow:hidden;border-radius:var(--r);
     background:#fff;box-shadow:0 24px 70px rgba(12,44,122,.18);
-    transform-origin:top left;will-change:transform,opacity
+    transform-origin:top left;will-change:transform,opacity;
+    pointer-events:none !important;
   }
 
   @media (prefers-reduced-motion: reduce){ .pdp-media img{transition:none} }
