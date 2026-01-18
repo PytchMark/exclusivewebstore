@@ -166,14 +166,17 @@
 
   /* Sticky Cart Widget */
   .cart-fab{
-    position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:60;
+    position:fixed;left:16px;bottom:16px;z-index:60;
     display:inline-flex;align-items:center;gap:10px;
     padding:12px 16px;border-radius:999px;
     background:radial-gradient(circle at 0 0,#ffffff, #F4F7FF);
     border:1px solid rgba(12,44,122,.18);
     box-shadow:0 16px 40px rgba(12,44,122,.24);
-    cursor:pointer
+    cursor:pointer;
+    transition:transform .2s ease, box-shadow .2s ease;
   }
+  .cart-fab:hover{transform:translateY(-1px)}
+  .cart-fab .cart-icon{font-size:16px;line-height:1}
   .cart-fab .dot{
     min-width:22px;height:22px;border-radius:999px;
     background:linear-gradient(135deg,var(--gold),var(--gold2));
@@ -181,6 +184,21 @@
     font-weight:800;font-size:12px;box-shadow:0 8px 18px rgba(185,138,47,.35)
   }
   .cart-fab .meta{font-weight:700;color:var(--blue);font-size:13px}
+  .cart-fab.lead{animation:cartPulse 3s ease-in-out infinite}
+  .cart-fab.lead .dot{display:none}
+  .cart-fab.has-owner{
+    width:54px;height:54px;padding:0;border-radius:999px;
+    display:grid;place-items:center;gap:0;
+  }
+  .cart-fab.has-owner .meta{display:none}
+  .cart-fab.has-owner .cart-icon{font-size:20px}
+  .cart-fab.has-owner .dot{
+    position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;font-size:11px
+  }
+  @keyframes cartPulse{
+    0%,100%{box-shadow:0 16px 40px rgba(12,44,122,.24)}
+    50%{box-shadow:0 18px 55px rgba(12,44,122,.32), 0 0 0 8px rgba(230,182,82,.18)}
+  }
 
   .drawer{
     position:fixed;left:50%;transform:translateX(-50%);bottom:-100%;
@@ -254,7 +272,14 @@
     margin:0 0 6px;color:var(--blue);font-size:clamp(22px,4.8vw,34px)
   }
   .prompt-copy{color:#3b3a37;line-height:1.7;margin:0 0 10px}
+  .prompt-gate{
+    margin:0 0 8px;
+    padding:10px 12px;border-radius:12px;
+    background:rgba(12,44,122,.08);
+    color:var(--blue);font-weight:600;font-size:14px;
+  }
   .prompt-bullets{margin:8px 0 12px;padding-left:18px;color:#4B4A46;font-size:14px}
+  .prompt-urgency{margin:0 0 12px;color:#3b3a37;font-size:13.5px;font-weight:600}
   .prompt-form{display:grid;gap:10px}
   .prompt-form input{padding:12px 14px;border-radius:12px;border:1px solid rgba(12,44,122,.18);background:#fff;font-size:14px}
   .prompt-cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
