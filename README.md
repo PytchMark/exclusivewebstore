@@ -32,6 +32,12 @@ Copy `.env.example` and set the required values.
 - `STORE_RETURN_URL` (optional)
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `SMTP_FROM`
+- `SMTP_FROM_NAME`
 - `PORT` (default `8080`)
 
 ## Local development
