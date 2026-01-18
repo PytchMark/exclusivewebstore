@@ -1,4 +1,5 @@
 import express from "express";
+import nodemailer from "nodemailer";
 
 import { getSupabaseClient, isSupabaseConfigured } from "./services/supabase.js";
 import { buildHashExtended, makeOid, makeTxnDateTimeUTC, normalizeAmount } from "./payments/fiserv.js";
@@ -11,6 +12,12 @@ const FISERV_FORM_ACTION = process.env.FISERV_FORM_ACTION || "";
 const DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || "388";
 const DEFAULT_TIMEZONE = process.env.DEFAULT_TIMEZONE || "UTC";
 const STORE_RETURN_URL = process.env.STORE_RETURN_URL || "/";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = process.env.SMTP_PORT || "";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
+const SMTP_FROM = process.env.SMTP_FROM || "";
+const SMTP_FROM_NAME = process.env.SMTP_FROM_NAME || "";
 
 const FISERV_REQUIRED = ["FISERV_STORE_ID", "FISERV_SHARED_SECRET", "FISERV_FORM_ACTION"];
 const missingFiserv = FISERV_REQUIRED.filter((key) => !process.env[key]);
@@ -58,6 +65,125 @@ function parseItems(items) {
 
     return { sku, name, price, qty };
   });
+}
+
+function normalizeValue(value) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function findFirstValue(source, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      const candidate = normalizeValue(source[key]);
+      if (candidate) {
+        return candidate;
+      }
+    }
+  }
+  return "";
+}
+
+function getReceiptFields(data) {
+  const companyName = findFirstValue(data, ["companyTradeName", "company_name", "companyName", "tradeName", "merchantName"]);
+  const processingDate = findFirstValue(data, ["processingDate", "txndatetime", "date", "processing_date"]);
+  const orderNumber = findFirstValue(data, [
+    "oid",
+    "orderId",
+    "order_id",
+    "gatewayOrderId",
+    "gateway_order_id",
+    "merchantTransactionId",
+  ]);
+  const cardType = findFirstValue(data, ["cardType", "card_type", "paymentMethod", "payment_method", "cardBrand"]);
+  const transactionAmount = findFirstValue(data, ["chargetotal", "amount", "txnamount", "transactionAmount"]);
+  const currencyCode = findFirstValue(data, ["currency", "currencycode", "currencyCode", "currency_code"]);
+  const approvalCode = findFirstValue(data, ["approval_code", "approvalCode", "auth_code", "authorizationCode"]);
+  const customerEmail = findFirstValue(data, [
+    "email",
+    "customerEmail",
+    "customer_email",
+    "billEmail",
+    "bill_email",
+    "payerEmail",
+    "payer_email",
+  ]);
+
+  return {
+    companyName,
+    processingDate,
+    orderNumber,
+    cardType,
+    transactionAmount,
+    currencyCode,
+    approvalCode,
+    customerEmail,
+  };
+}
+
+function buildReceiptBody(fields) {
+  const lines = [
+    "Payment Receipt",
+    "================",
+    fields.companyName ? `Merchant: ${fields.companyName}` : null,
+    fields.processingDate ? `Processing Date: ${fields.processingDate}` : null,
+    fields.orderNumber ? `Order Number: ${fields.orderNumber}` : null,
+    fields.cardType ? `Card Type: ${fields.cardType}` : null,
+    fields.transactionAmount ? `Amount: ${fields.transactionAmount}` : null,
+    fields.currencyCode ? `Currency: ${fields.currencyCode}` : null,
+    fields.approvalCode ? `Approval Code: ${fields.approvalCode}` : null,
+    "",
+    "Thank you for your purchase.",
+  ];
+
+  return lines.filter(Boolean).join("\n");
+}
+
+function getSmtpConfig() {
+  const required = [SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM];
+  const configured = required.every((value) => Boolean(normalizeValue(value)));
+  return {
+    configured,
+    port: Number(SMTP_PORT || 0),
+  };
+}
+
+async function sendReceiptEmail(fields) {
+  const smtpConfig = getSmtpConfig();
+  if (!smtpConfig.configured) {
+    return { ok: false, warning: "Email receipt could not be sent (SMTP not configured)." };
+  }
+
+  if (!fields.customerEmail) {
+    return { ok: false, warning: "Email receipt could not be sent (missing customer email)." };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: smtpConfig.port || 587,
+    secure: smtpConfig.port === 465,
+    auth: {
+      user: SMTP_USER,
+      pass: SMTP_PASS,
+    },
+  });
+
+  const fromLabel = SMTP_FROM_NAME ? `${SMTP_FROM_NAME} <${SMTP_FROM}>` : SMTP_FROM;
+
+  try {
+    await transporter.sendMail({
+      from: fromLabel,
+      to: fields.customerEmail,
+      subject: "Your payment receipt",
+      text: buildReceiptBody(fields),
+    });
+    return { ok: true, warning: "" };
+  } catch (err) {
+    console.warn("Failed to send receipt email:", err);
+    return { ok: false, warning: "Email receipt could not be sent." };
+  }
 }
 
 function computeSubtotal(items) {
@@ -203,7 +329,7 @@ app.post("/api/cart/save", async (req, res) => {
   }
 });
 
-app.all("/payment-result", (req, res) => {
+app.all("/payment-result", async (req, res) => {
   const data = { ...req.query, ...req.body };
   const approved =
     String(data.approval_code || "").startsWith("Y") ||
@@ -214,6 +340,15 @@ app.all("/payment-result", (req, res) => {
   const transactionId = String(data.ipgTransactionId || data.transactionId || "—");
   const redirect = approved ? "Approved ✅" : "Failed ❌";
   const returnUrl = STORE_RETURN_URL || "/";
+  let emailWarning = "";
+
+  if (approved) {
+    const fields = getReceiptFields(data);
+    const result = await sendReceiptEmail(fields);
+    if (!result.ok) {
+      emailWarning = result.warning;
+    }
+  }
 
   res.type("html").send(`<!doctype html>
 <html lang="en">
@@ -238,6 +373,7 @@ app.all("/payment-result", (req, res) => {
     <h1>${redirect}</h1>
     <p class="meta">Reference: <strong>${escapeHtml(oid)}</strong></p>
     <p class="meta">Transaction: <strong>${escapeHtml(transactionId)}</strong></p>
+    ${emailWarning ? `<p class="meta">${escapeHtml(emailWarning)}</p>` : ""}
     <div class="actions">
       <a class="btn primary" href="${escapeHtml(returnUrl)}">Return to Store</a>
       ${approved ? "" : `<a class="btn" href="${escapeHtml(returnUrl)}">Try Again</a>`}
