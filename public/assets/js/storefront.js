@@ -314,8 +314,11 @@ function renderGrid(list){
 
 // ======== PDP LOGIC ========
 let ACTIVE = null, QTY = 1, PROD = null;
-let pdpOpenTimer = null;
-let pdpCloseTimer = null;
+let PDP_STATE = {
+  closing: false,
+  openTimer: null,
+  closeTimer: null
+};
 const backdrop = $('#backdrop'), pdp = $('#pdp'), strip = $('#pdpStrip');
 const img = $('#pdpImg'), title = $('#pdptitle'), sub = $('#pdpsub'),
       priceEl = $('#pdpprice'), badgesEl = $('#pdpbadges'), tiersEl = $('#pdptiers');
@@ -328,17 +331,30 @@ $('#close').onclick = closePDP;
 backdrop.onclick    = closePDP;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePDP(); });
 
-function openPDP(p,card){
-  clearTimeout(pdpOpenTimer);
-  clearTimeout(pdpCloseTimer);
-  pdpOpenTimer = null;
-  pdpCloseTimer = null;
+function hardCleanupPDP(){
+  if(PDP_STATE.openTimer){
+    clearTimeout(PDP_STATE.openTimer);
+    PDP_STATE.openTimer = null;
+  }
+  if(PDP_STATE.closeTimer){
+    clearTimeout(PDP_STATE.closeTimer);
+    PDP_STATE.closeTimer = null;
+  }
+  PDP_STATE.closing = false;
+
   document.querySelectorAll('.ghost').forEach(g => g.remove());
+
   backdrop.classList.remove('show');
   pdp.classList.remove('show');
+
   pdp.style.transition = '';
   pdp.style.transform = '';
-  pdp.style.opacity = 1;
+  pdp.style.transformOrigin = '';
+  pdp.style.opacity = '';
+}
+
+function openPDP(p,card){
+  hardCleanupPDP();
 
   PROD = p;
   ACTIVE = card;
@@ -364,6 +380,7 @@ function openPDP(p,card){
   ghost.style.top    = r.top + 'px';
   ghost.style.width  = r.width + 'px';
   ghost.style.height = r.height + 'px';
+  ghost.style.pointerEvents = 'none';
   document.body.appendChild(ghost);
 
   requestAnimationFrame(()=>{
@@ -381,37 +398,33 @@ function openPDP(p,card){
       pdp.style.transform = 'translate(0,0) scale(1,1)';
       ghost.style.opacity = 0;
       ghost.style.transition = 'opacity .2s ease';
-      pdpOpenTimer = setTimeout(()=>{
+      PDP_STATE.openTimer = setTimeout(()=>{
         ghost.remove();
         pdp.style.transition = '';
         pdp.style.transform = '';
-        pdpOpenTimer = null;
-      }, 400);
+        PDP_STATE.openTimer = null;
+      }, 450);
     });
   });
 }
 
 function closePDP(){
-  clearTimeout(pdpOpenTimer);
-  clearTimeout(pdpCloseTimer);
-  pdpOpenTimer = null;
-  pdpCloseTimer = null;
+  if(PDP_STATE.closing) return;
+  PDP_STATE.closing = true;
+
   document.querySelectorAll('.ghost').forEach(g => g.remove());
-  backdrop.classList.remove('show');
 
-  const wasOpen = pdp.classList.contains('show');
-  const origin = ACTIVE || document.querySelector(`[data-sku="${PROD?.sku}"]`);
-  const rr = pdp.getBoundingClientRect();
-
-  if(!wasOpen){
-    pdp.classList.remove('show');
-    pdp.style.transition = '';
-    pdp.style.transform  = '';
-    pdp.style.opacity    = 1;
+  if(!pdp.classList.contains('show')){
+    hardCleanupPDP();
     ACTIVE = null;
     PROD = null;
     return;
   }
+
+  const origin = ACTIVE || document.querySelector(`[data-sku="${PROD?.sku}"]`);
+  const rr = pdp.getBoundingClientRect();
+
+  backdrop.classList.remove('show');
 
   if(origin){
     const r  = origin.getBoundingClientRect();
@@ -421,21 +434,16 @@ function closePDP(){
     pdp.style.transformOrigin = 'top left';
     pdp.style.transform = `translate(${dx}px,${dy}px) scale(${sx},${sy})`;
     pdp.style.opacity = 0;
-    pdpCloseTimer = setTimeout(()=>{
-      pdp.classList.remove('show');
-      pdp.style.transition = '';
-      pdp.style.transform  = '';
-      pdp.style.opacity    = 1;
+    PDP_STATE.closeTimer = setTimeout(()=>{
+      hardCleanupPDP();
       ACTIVE = null;
       PROD = null;
-      document.querySelectorAll('.ghost').forEach(g => g.remove());
-      pdpCloseTimer = null;
-    }, 320);
+      PDP_STATE.closeTimer = null;
+    }, 340);
   }else{
-    pdp.classList.remove('show');
+    hardCleanupPDP();
     ACTIVE = null;
     PROD = null;
-    document.querySelectorAll('.ghost').forEach(g => g.remove());
   }
 }
 
