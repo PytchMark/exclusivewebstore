@@ -40,6 +40,11 @@ Copy `.env.example` and set the required values.
 - `SMTP_FROM_NAME`
 - `PORT` (default `8080`)
 
+24-hour cart lead capture requires Supabase and writes to the `carts_24h` table:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
 ## Local development
 
 ```bash

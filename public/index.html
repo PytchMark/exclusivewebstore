@@ -61,9 +61,9 @@
 
   <!-- Sticky Cart Widget -->
   <button class="cart-fab" id="cartFab" aria-expanded="false" aria-controls="cartDrawer">
-    <span class="cart-icon" aria-hidden="true">🛒</span>
-    <span class="dot" id="cartCount">0</span>
-    <span class="meta" id="cartMeta">Create my 24hr cart</span>
+    <span class="fab-icon" aria-hidden="true">🛒</span>
+    <span class="fab-label" id="cartMeta">Create my 24hr cart</span>
+    <span class="fab-count" id="cartCount">0</span>
   </button>
 
   <section class="drawer" id="cartDrawer" role="dialog" aria-modal="true" aria-labelledby="cartTitle">
@@ -94,12 +94,13 @@
 
     <div class="prompt-grid">
       <figure class="prompt-media" aria-hidden="true">
-        <img id="promptImg" src="PROMPT_IMG_URL" alt="" />
+        <img id="promptImg" src="https://images.pexels.com/photos/271795/pexels-photo-271795.jpeg" alt="" />
       </figure>
       <div class="prompt-body">
         <h2 class="prompt-title" id="promptTitle">Save Your 24-Hour Cart</h2>
-        <p class="prompt-gate" id="promptGate" hidden>To reserve items and check out, please save your 24-hour cart.</p>
-        <p class="prompt-copy">Save your cart now so we can hold your picks for 24 hours while you compare items and decide.</p>
+        <p class="prompt-copy">Reserve the pieces you love for the next 24 hours. Save your cart to compare items, check out later, and coordinate island-wide delivery or Knutsford pickup.</p>
+        <p class="prompt-gate" id="promptGate">To reserve items and check out, please save your 24-hour cart.</p>
+        <p class="prompt-copy" style="margin-top:0">Popular items can sell out—saving your cart helps us reserve your picks for 24 hours.</p>
         <ul class="prompt-bullets">
           <li>Cart held for 24 hours</li>
           <li>Compare pieces and check out later</li>
