@@ -11,6 +11,11 @@ const INVENTORY_EXEC =
 const CHECKOUT_ENDPOINT = '/api/checkout/start';
 const CART_SAVE_ENDPOINT = '/api/cart/save';
 
+// Local storage keys for 24-hour cart
+const LS_KEY_OWNER = 'ec_cart_owner';
+const LS_KEY_CART_ID = 'ec_cart_id';
+const LS_KEY_NEXT  = 'ec_cart_prompt_next_at';
+
 // Currency mapping:
 // If you're charging in JMD through Fiserv, the numeric code is typically 388.
 // If you are charging in USD, use 840.
@@ -453,6 +458,16 @@ function setCartOpen(open){
   cartFab.setAttribute('aria-expanded', String(open));
 }
 
+function updateLeadCta(){
+  const ownerExists = hasOwner();
+  cartFab.classList.toggle('has-owner', ownerExists);
+  cartFab.classList.toggle('lead', !ownerExists);
+  cartFab.setAttribute('aria-label', ownerExists ? 'Open cart' : 'Create my 24-hour cart');
+  cartMeta.textContent = ownerExists
+    ? (CART.items.length ? 'View Cart' : 'Your Cart')
+    : 'Create my 24hr cart';
+}
+
 function addToCart(item, qty){
   const i = CART.items.findIndex(x=>x.sku===item.sku);
   if(i>=0) CART.items[i].qty += qty;
@@ -519,6 +534,8 @@ function renderCart(){
     ups.appendChild(c);
     c.querySelector('.btn').onclick = ()=>addToCart(p,1);
   });
+
+  updateLeadCta();
 }
 
 // Ensure PDP addToCart also hits our local cart
@@ -551,8 +568,20 @@ window.addEventListener('message', onMessageCart);
 // ✅ Checkout: keep existing emit, PLUS start payment handoff with exact subtotal (NEW)
 checkoutBtn.onclick = ()=>{
   const subtotal = getCartSubtotal();
+
+  // If cart is empty, don’t proceed
+  if(!CART.items.length || subtotal <= 0){
+    alert('Your cart is empty. Add an item first.');
+    return;
+  }
+
+  if(!hasOwner()){
+    openOwnerModal({ reason: 'checkout' });
+    return;
+  }
+
   const owner = getOwner();
-  const cartId = getCartId();
+  const cartId = owner?.cartId || getCartId();
 
   // Always emit (keeps your existing parent integration intact)
   emit('cart:checkout', {

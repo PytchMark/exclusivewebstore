@@ -277,7 +277,14 @@
     margin:0 0 6px;color:var(--blue);font-size:clamp(22px,4.8vw,34px)
   }
   .prompt-copy{color:#3b3a37;line-height:1.7;margin:0 0 10px}
+  .prompt-gate{
+    margin:0 0 8px;
+    padding:10px 12px;border-radius:12px;
+    background:rgba(12,44,122,.08);
+    color:var(--blue);font-weight:600;font-size:14px;
+  }
   .prompt-bullets{margin:8px 0 12px;padding-left:18px;color:#4B4A46;font-size:14px}
+  .prompt-urgency{margin:0 0 12px;color:#3b3a37;font-size:13.5px;font-weight:600}
   .prompt-form{display:grid;gap:10px}
   .prompt-form input{padding:12px 14px;border-radius:12px;border:1px solid rgba(12,44,122,.18);background:#fff;font-size:14px}
   .prompt-cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
