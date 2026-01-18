@@ -46,11 +46,6 @@ const CATEGORY_STRIPS = {
 const $  = sel => document.querySelector(sel);
 const $$ = sel => [...document.querySelectorAll(sel)];
 const PR = new Intl.NumberFormat('en-JM',{style:'currency',currency:'JMD',maximumFractionDigits:0});
-const LS_KEY_OWNER = 'ec_cart_owner';
-const LS_KEY_NEXT  = 'ec_cart_prompt_next_at';
-const LS_KEY_CART_ID = 'ec_cart_id';
-const INITIAL_DELAY = 45 * 1000;
-const REPEAT_DELAY = 45 * 60 * 1000;
 
 // Fallback mock products (with example images) in case API fails
 const FALLBACK_DATA = [
@@ -110,13 +105,7 @@ function getCartSubtotal(){
 
 function getOwner(){
   try{
-    const owner = JSON.parse(localStorage.getItem(LS_KEY_OWNER) || 'null');
-    if(owner && owner.name && owner.email && owner.phone && !owner.cartId){
-      owner.cartId = getCartId();
-      owner.createdAt = owner.createdAt || Date.now();
-      localStorage.setItem(LS_KEY_OWNER, JSON.stringify(owner));
-    }
-    return owner;
+    return JSON.parse(localStorage.getItem(LS_KEY_OWNER) || 'null');
   }catch(_){
     return null;
   }
@@ -392,12 +381,11 @@ function openPDP(p,card){
 }
 
 function closePDP(){
-  document.querySelectorAll('.ghost').forEach(g => g.remove());
-  backdrop.classList.remove('show');
   if(!pdp.classList.contains('show')) return;
 
   const origin = ACTIVE || document.querySelector(`[data-sku="${PROD?.sku}"]`);
   const rr = pdp.getBoundingClientRect();
+  backdrop.classList.remove('show');
 
   if(origin){
     const r  = origin.getBoundingClientRect();
@@ -449,7 +437,14 @@ const cartClose = $('#cartClose'),
       keepShopping = $('#keepShopping'),
       checkoutBtn  = $('#checkout');
 
-cartFab.onclick      = ()=>{ hasOwner() ? setCartOpen(!cartDrawer.classList.contains('open')) : openOwnerModal('manual'); };
+cartFab.onclick      = ()=>{
+  if(hasOwner()){
+    const open = !cartDrawer.classList.contains('open');
+    setCartOpen(open);
+    return;
+  }
+  openOwnerModal({ reason: 'cta' });
+};
 cartClose.onclick    = ()=>setCartOpen(false);
 keepShopping.onclick = ()=>setCartOpen(false);
 
@@ -490,7 +485,10 @@ function setQty(sku, qty){
 
 function renderCart(){
   const subtotal = getCartSubtotal();
-  updateOwnerUI();
+  cartCount.textContent   = String(CART.items.reduce((s,i)=>s+i.qty,0));
+  cartMeta.textContent    = hasOwner()
+    ? (CART.items.length ? 'View Cart' : 'Your Cart')
+    : 'Create my 24hr cart';
   cartSubtotal.textContent= `Subtotal — ${PR.format(subtotal)}`;
   cartBody.innerHTML = '';
 
@@ -593,17 +591,6 @@ checkoutBtn.onclick = ()=>{
     owner: owner ? { name: owner.name || '', email: owner.email || '', phone: owner.phone || '' } : null
   });
 
-  // If cart is empty, don’t proceed
-  if(!CART.items.length || subtotal <= 0){
-    alert('Your cart is empty. Add an item first.');
-    return;
-  }
-
-  if(!hasOwner()){
-    openOwnerModal('checkout');
-    return;
-  }
-
   startCheckout({
     items: CART.items.map(item => ({
       sku: item.sku,
@@ -622,108 +609,117 @@ checkoutBtn.onclick = ()=>{
 
 renderCart();
 
-// ======== 24-HOUR CART PROMPT ========
+// ======== 24-HOUR CART PROMPT (same behaviour as before) ========
+const INITIAL_DELAY = 45 * 1000;
+const REPEAT_DELAY = 45 * 60 * 1000;
+
 const promptBackdrop = $('#promptBackdrop');
 const promptModal    = $('#promptModal');
 const promptClose    = $('#promptClose');
 const promptGate     = $('#promptGate');
+
 let promptTimer = null;
 
 function hasOwner(){
-  const owner = getOwner();
-  return !!(owner && owner.name && owner.email && owner.phone && owner.cartId);
-}
-
-function setOwner({ name, email, phone }){
-  const cartId = getCartId();
-  const createdAt = Date.now();
-  const payload = { name, email, phone, cartId, createdAt };
-  localStorage.setItem(LS_KEY_OWNER, JSON.stringify(payload));
-  localStorage.removeItem(LS_KEY_NEXT);
-  updateOwnerUI();
-  return payload;
-}
-
-function updateOwnerUI(){
-  const count = CART.items.reduce((sum, item) => sum + item.qty, 0);
-  if(hasOwner()){
-    cartFab.classList.remove('owner-cta');
-    cartFab.classList.add('cart-ready');
-    cartMeta.textContent = count ? 'View Cart' : 'Your Cart';
-    cartCount.textContent = String(count);
-    cartFab.setAttribute('aria-label', 'Open cart');
-    cartFab.title = 'Open cart';
-  }else{
-    cartFab.classList.add('owner-cta');
-    cartFab.classList.remove('cart-ready');
-    cartMeta.textContent = 'Create my 24hr cart';
-    cartCount.textContent = '🛒';
-    cartFab.setAttribute('aria-label', 'Create my 24hr cart');
-    cartFab.title = 'Create my 24hr cart';
+  try{
+    const o = JSON.parse(localStorage.getItem(LS_KEY_OWNER) || 'null');
+    return !!(o && o.name && o.email && o.phone);
+  }catch(_){
+    return false;
   }
 }
-
-function openOwnerModal(reason = 'auto'){
+function setOwner(owner){
+  const cartId = owner?.cartId || getCartId();
+  const payload = {
+    name: owner?.name || '',
+    email: owner?.email || '',
+    phone: owner?.phone || '',
+    cartId,
+    createdAt: owner?.createdAt || Date.now()
+  };
+  localStorage.setItem(LS_KEY_OWNER, JSON.stringify(payload));
+  updateLeadCta();
+  return payload;
+}
+function scheduleNext(ms){
+  localStorage.setItem(LS_KEY_NEXT, String(Date.now()+ms));
+}
+function nextDue(){
+  const v = Number(localStorage.getItem(LS_KEY_NEXT) || 0);
+  return Date.now() >= v;
+}
+function openOwnerModal({ reason } = {}){
   if(hasOwner()) return;
-  promptGate.classList.toggle('show', reason === 'checkout');
+  if(promptGate){
+    promptGate.hidden = reason !== 'checkout';
+  }
   promptBackdrop.classList.add('show');
   promptModal.classList.add('show');
 }
-
 function closeOwnerModal(){
   promptBackdrop.classList.remove('show');
   promptModal.classList.remove('show');
-  promptGate.classList.remove('show');
-}
-
-function scheduleNext(ms){
-  localStorage.setItem(LS_KEY_NEXT, String(Date.now() + ms));
 }
 
 function schedulePrompt(){
   if(hasOwner()) return;
-  clearTimeout(promptTimer);
-  const nextAt = Number(localStorage.getItem(LS_KEY_NEXT) || 0);
+  if(promptTimer){
+    clearTimeout(promptTimer);
+  }
+
+  const now = Date.now();
+  let nextAt = Number(localStorage.getItem(LS_KEY_NEXT) || 0);
   if(!nextAt){
+    nextAt = now + INITIAL_DELAY;
     scheduleNext(INITIAL_DELAY);
   }
-  const dueAt = Number(localStorage.getItem(LS_KEY_NEXT) || Date.now() + INITIAL_DELAY);
-  const delay = Math.max(0, dueAt - Date.now());
-  promptTimer = window.setTimeout(()=>{
+  const delay = Math.max(0, nextAt - now);
+  promptTimer = setTimeout(()=>{
     if(hasOwner()) return;
-    openOwnerModal('auto');
+    if(nextDue()){
+      openOwnerModal({ reason: 'auto' });
+    }
   }, delay);
 }
 
-function dismissPrompt(){
+promptBackdrop.addEventListener('click', ()=>{
   closeOwnerModal();
   scheduleNext(REPEAT_DELAY);
   schedulePrompt();
-}
-
-promptBackdrop.addEventListener('click', dismissPrompt);
+});
 document.addEventListener('keydown',(e)=>{
   if(e.key === 'Escape' && promptModal.classList.contains('show')){
-    dismissPrompt();
+    closeOwnerModal();
+    scheduleNext(REPEAT_DELAY);
+    schedulePrompt();
   }
 });
-promptClose.addEventListener('click', dismissPrompt);
+promptClose.addEventListener('click', ()=>{
+  closeOwnerModal();
+  scheduleNext(REPEAT_DELAY);
+  schedulePrompt();
+});
 
 function onMessagePrompt(e){
   const {type,payload} = e.data || {};
   if(type==='state:cart'){
-    if(payload && payload.name && payload.email && payload.phone){
+    if(payload && (payload.name || payload.email)){
       setOwner({
-        name: payload.name,
-        email: payload.email,
-        phone: payload.phone
+        name: payload.name || '',
+        email: payload.email || '',
+        phone: payload.phone || '',
+        cartId: payload.cartId || getCartId()
       });
     }
   }
 }
 window.addEventListener('message', onMessagePrompt);
 
-$('#promptLater').onclick = dismissPrompt;
+$('#promptLater').onclick = ()=>{
+  closeOwnerModal();
+  scheduleNext(REPEAT_DELAY);
+  schedulePrompt();
+};
 
 const promptForm = $('#promptForm');
 promptForm.addEventListener('submit', (e)=>{
@@ -733,8 +729,10 @@ promptForm.addEventListener('submit', (e)=>{
   const phone = $('#pPhone').value.trim();
   if(!name || !email || !phone) return;
 
-  const owner = setOwner({ name, email, phone });
-  emit('cart:saveOwner', { cartId: owner.cartId, name, email, phone });
+  const cartId = getCartId();
+  setOwner({ name, email, phone, cartId });
+
+  emit('cart:saveOwner', { cartId, name, email, phone });
 
   fetch(CART_SAVE_ENDPOINT,{
     method:'POST',
@@ -742,14 +740,14 @@ promptForm.addEventListener('submit', (e)=>{
     body: JSON.stringify({
       event:'cartSaved',
       site:'exclusivecomfortdecor',
-      cartId: owner.cartId,
+      cartId,
       name,
       email,
       phone,
       items: CART.items || [],
       currency: PAYMENT_CURRENCY_CODE,
       source: 'storefront',
-      ts: owner.createdAt
+      ts: Date.now()
     })
   }).catch(()=>{});
 
@@ -759,6 +757,6 @@ promptForm.addEventListener('submit', (e)=>{
 // ======== INIT ========
 window.addEventListener('load', ()=>{
   loadProducts();
-  updateOwnerUI();
+  updateLeadCta();
   schedulePrompt();
 });
