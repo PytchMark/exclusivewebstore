@@ -11,6 +11,11 @@ const INVENTORY_EXEC =
 const CHECKOUT_ENDPOINT = '/api/checkout/start';
 const CART_SAVE_ENDPOINT = '/api/cart/save';
 
+// Local storage keys for 24-hour cart
+const LS_KEY_OWNER = 'ec_cart_owner';
+const LS_KEY_CART_ID = 'ec_cart_id';
+const LS_KEY_NEXT  = 'ec_cart_prompt_next_at';
+
 // Currency mapping:
 // If you're charging in JMD through Fiserv, the numeric code is typically 388.
 // If you are charging in USD, use 840.
@@ -107,10 +112,11 @@ function getOwner(){
 }
 
 function getCartId(){
-  const existing = localStorage.getItem('ec_cart_id');
+  const existing = localStorage.getItem(LS_KEY_CART_ID);
   if(existing) return existing;
-  const id = `cart_${Date.now()}`;
-  localStorage.setItem('ec_cart_id', id);
+  const rand = Math.random().toString(36).slice(2, 8);
+  const id = `cart_${Date.now()}_${rand}`;
+  localStorage.setItem(LS_KEY_CART_ID, id);
   return id;
 }
 
@@ -431,13 +437,30 @@ const cartClose = $('#cartClose'),
       keepShopping = $('#keepShopping'),
       checkoutBtn  = $('#checkout');
 
-cartFab.onclick      = ()=>{ const open=!cartDrawer.classList.contains('open'); setCartOpen(open); };
+cartFab.onclick      = ()=>{
+  if(hasOwner()){
+    const open = !cartDrawer.classList.contains('open');
+    setCartOpen(open);
+    return;
+  }
+  openOwnerModal({ reason: 'cta' });
+};
 cartClose.onclick    = ()=>setCartOpen(false);
 keepShopping.onclick = ()=>setCartOpen(false);
 
 function setCartOpen(open){
   cartDrawer.classList.toggle('open',open);
   cartFab.setAttribute('aria-expanded', String(open));
+}
+
+function updateLeadCta(){
+  const ownerExists = hasOwner();
+  cartFab.classList.toggle('has-owner', ownerExists);
+  cartFab.classList.toggle('lead', !ownerExists);
+  cartFab.setAttribute('aria-label', ownerExists ? 'Open cart' : 'Create my 24-hour cart');
+  cartMeta.textContent = ownerExists
+    ? (CART.items.length ? 'View Cart' : 'Your Cart')
+    : 'Create my 24hr cart';
 }
 
 function addToCart(item, qty){
@@ -463,7 +486,9 @@ function setQty(sku, qty){
 function renderCart(){
   const subtotal = getCartSubtotal();
   cartCount.textContent   = String(CART.items.reduce((s,i)=>s+i.qty,0));
-  cartMeta.textContent    = CART.items.length ? 'View Cart' : 'Your Cart';
+  cartMeta.textContent    = hasOwner()
+    ? (CART.items.length ? 'View Cart' : 'Your Cart')
+    : 'Create my 24hr cart';
   cartSubtotal.textContent= `Subtotal — ${PR.format(subtotal)}`;
   cartBody.innerHTML = '';
 
@@ -507,6 +532,8 @@ function renderCart(){
     ups.appendChild(c);
     c.querySelector('.btn').onclick = ()=>addToCart(p,1);
   });
+
+  updateLeadCta();
 }
 
 // Ensure PDP addToCart also hits our local cart
@@ -539,8 +566,20 @@ window.addEventListener('message', onMessageCart);
 // ✅ Checkout: keep existing emit, PLUS start payment handoff with exact subtotal (NEW)
 checkoutBtn.onclick = ()=>{
   const subtotal = getCartSubtotal();
+
+  // If cart is empty, don’t proceed
+  if(!CART.items.length || subtotal <= 0){
+    alert('Your cart is empty. Add an item first.');
+    return;
+  }
+
+  if(!hasOwner()){
+    openOwnerModal({ reason: 'checkout' });
+    return;
+  }
+
   const owner = getOwner();
-  const cartId = getCartId();
+  const cartId = owner?.cartId || getCartId();
 
   // Always emit (keeps your existing parent integration intact)
   emit('cart:checkout', {
@@ -551,12 +590,6 @@ checkoutBtn.onclick = ()=>{
     cartId,
     owner: owner ? { name: owner.name || '', email: owner.email || '', phone: owner.phone || '' } : null
   });
-
-  // If cart is empty, don’t proceed
-  if(!CART.items.length || subtotal <= 0){
-    alert('Your cart is empty. Add an item first.');
-    return;
-  }
 
   startCheckout({
     items: CART.items.map(item => ({
@@ -577,23 +610,36 @@ checkoutBtn.onclick = ()=>{
 renderCart();
 
 // ======== 24-HOUR CART PROMPT (same behaviour as before) ========
-const LS_KEY_OWNER = 'ec_cart_owner';
-const LS_KEY_NEXT  = 'ec_cart_prompt_next_at';
-const MIN          = 60 * 1000;
-const INITIAL_DELAY= 45 * MIN;
-const REPEAT_DELAY = 45 * MIN;
+const INITIAL_DELAY = 45 * 1000;
+const REPEAT_DELAY = 45 * 60 * 1000;
 
 const promptBackdrop = $('#promptBackdrop');
 const promptModal    = $('#promptModal');
 const promptClose    = $('#promptClose');
+const promptGate     = $('#promptGate');
+
+let promptTimer = null;
 
 function hasOwner(){
   try{
     const o = JSON.parse(localStorage.getItem(LS_KEY_OWNER) || 'null');
-    return !!(o && o.name && o.email);
+    return !!(o && o.name && o.email && o.phone);
   }catch(_){
     return false;
   }
+}
+function setOwner(owner){
+  const cartId = owner?.cartId || getCartId();
+  const payload = {
+    name: owner?.name || '',
+    email: owner?.email || '',
+    phone: owner?.phone || '',
+    cartId,
+    createdAt: owner?.createdAt || Date.now()
+  };
+  localStorage.setItem(LS_KEY_OWNER, JSON.stringify(payload));
+  updateLeadCta();
+  return payload;
 }
 function scheduleNext(ms){
   localStorage.setItem(LS_KEY_NEXT, String(Date.now()+ms));
@@ -602,105 +648,115 @@ function nextDue(){
   const v = Number(localStorage.getItem(LS_KEY_NEXT) || 0);
   return Date.now() >= v;
 }
-function showPrompt(){
+function openOwnerModal({ reason } = {}){
   if(hasOwner()) return;
+  if(promptGate){
+    promptGate.hidden = reason !== 'checkout';
+  }
   promptBackdrop.classList.add('show');
   promptModal.classList.add('show');
 }
-function hidePrompt(){
+function closeOwnerModal(){
   promptBackdrop.classList.remove('show');
   promptModal.classList.remove('show');
 }
 
-function tryPrompt(){
+function schedulePrompt(){
   if(hasOwner()) return;
-  if(!localStorage.getItem(LS_KEY_NEXT)){
+  if(promptTimer){
+    clearTimeout(promptTimer);
+  }
+
+  const now = Date.now();
+  let nextAt = Number(localStorage.getItem(LS_KEY_NEXT) || 0);
+  if(!nextAt){
+    nextAt = now + INITIAL_DELAY;
     scheduleNext(INITIAL_DELAY);
   }
-  const tick = ()=>{
+  const delay = Math.max(0, nextAt - now);
+  promptTimer = setTimeout(()=>{
     if(hasOwner()) return;
     if(nextDue()){
-      showPrompt();
-    }else{
-      setTimeout(tick, 1500);
+      openOwnerModal({ reason: 'auto' });
     }
-  };
-  setTimeout(tick, 1200);
+  }, delay);
 }
 
 promptBackdrop.addEventListener('click', ()=>{
-  hidePrompt();
+  closeOwnerModal();
   scheduleNext(REPEAT_DELAY);
+  schedulePrompt();
 });
 document.addEventListener('keydown',(e)=>{
   if(e.key === 'Escape' && promptModal.classList.contains('show')){
-    hidePrompt();
+    closeOwnerModal();
     scheduleNext(REPEAT_DELAY);
+    schedulePrompt();
   }
 });
 promptClose.addEventListener('click', ()=>{
-  hidePrompt();
+  closeOwnerModal();
   scheduleNext(REPEAT_DELAY);
+  schedulePrompt();
 });
 
 function onMessagePrompt(e){
   const {type,payload} = e.data || {};
   if(type==='state:cart'){
     if(payload && (payload.name || payload.email)){
-      localStorage.setItem(LS_KEY_OWNER, JSON.stringify({
-        name : payload.name  || '',
+      setOwner({
+        name: payload.name || '',
         email: payload.email || '',
-        phone: payload.phone || ''
-      }));
+        phone: payload.phone || '',
+        cartId: payload.cartId || getCartId()
+      });
     }
   }
 }
 window.addEventListener('message', onMessagePrompt);
 
 $('#promptLater').onclick = ()=>{
-  hidePrompt();
+  closeOwnerModal();
   scheduleNext(REPEAT_DELAY);
+  schedulePrompt();
 };
 
 const promptForm = $('#promptForm');
-promptForm.addEventListener('submit', async (e)=>{
+promptForm.addEventListener('submit', (e)=>{
   e.preventDefault();
   const name  = $('#pName').value.trim();
   const email = $('#pEmail').value.trim();
   const phone = $('#pPhone').value.trim();
   if(!name || !email || !phone) return;
 
-  const cartId = localStorage.getItem('ec_cart_id') || `cart_${Date.now()}`;
-  localStorage.setItem('ec_cart_id', cartId);
-
-  localStorage.setItem(LS_KEY_OWNER, JSON.stringify({name,email,phone}));
+  const cartId = getCartId();
+  setOwner({ name, email, phone, cartId });
 
   emit('cart:saveOwner', { cartId, name, email, phone });
 
-  try{
-    await fetch(CART_SAVE_ENDPOINT,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        event:'cartSaved',
-        site:'exclusivecomfortdecor',
-        cartId,
-        name,
-        email,
-        phone,
-        items: CART.items || [],
-        currency: PAYMENT_CURRENCY_CODE,
-        source: 'storefront',
-        ts: Date.now()
-      })
-    });
-  }catch(_){}
+  fetch(CART_SAVE_ENDPOINT,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      event:'cartSaved',
+      site:'exclusivecomfortdecor',
+      cartId,
+      name,
+      email,
+      phone,
+      items: CART.items || [],
+      currency: PAYMENT_CURRENCY_CODE,
+      source: 'storefront',
+      ts: Date.now()
+    })
+  }).catch(()=>{});
 
-  hidePrompt();
+  closeOwnerModal();
 });
 
 // ======== INIT ========
 window.addEventListener('load', ()=>{
   loadProducts();
-  tryPrompt();
+  updateLeadCta();
+  schedulePrompt();
 });

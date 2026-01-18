@@ -30,8 +30,8 @@ Copy `.env.example` and set the required values.
 - `DEFAULT_CURRENCY` (default `388`)
 - `DEFAULT_TIMEZONE` (default `UTC`)
 - `STORE_RETURN_URL` (optional)
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL` (required for 24-hour cart lead capture via `/api/cart/save`)
+- `SUPABASE_SERVICE_ROLE_KEY` (required for 24-hour cart lead capture via `/api/cart/save`)
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USER`
